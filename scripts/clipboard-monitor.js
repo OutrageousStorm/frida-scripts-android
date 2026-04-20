@@ -1,6 +1,6 @@
 /**
  * clipboard-monitor.js
- * Log all clipboard reads and writes in real time
+ * Log all clipboard read/write operations in real time
  * Usage: frida -U -f com.example.app -l clipboard-monitor.js --no-pause
  */
 
@@ -9,34 +9,54 @@ setTimeout(function() {
         console.log("[Clipboard Monitor] Active\n");
 
         var ClipboardManager = Java.use("android.content.ClipboardManager");
+        var Context = Java.use("android.content.Context");
 
-        // Hook getText() - app reading clipboard
-        ClipboardManager.getText.implementation = function() {
-            var result = this.getText.call(this);
-            if (result !== null) {
-                var text = result.toString().substring(0, 100);
-                console.log("[Clipboard READ] " + text);
-            }
-            return result;
+        // Hook onPrimaryClipChanged to detect when clipboard is read
+        ClipboardManager.onPrimaryClipChanged.implementation = function() {
+            try {
+                var clip = this.getPrimaryClip();
+                if (clip) {
+                    var count = clip.getItemCount();
+                    for (var i = 0; i < count; i++) {
+                        var item = clip.getItemAt(i);
+                        var text = item.getText();
+                        if (text) {
+                            console.log("[CLIPBOARD] READ: " + text.toString());
+                        }
+                    }
+                }
+            } catch(e) {}
+            return this.onPrimaryClipChanged.call(this);
         };
 
-        // Hook setPrimaryClip() - app writing to clipboard
+        // Hook setPrimaryClip to detect writes
         ClipboardManager.setPrimaryClip.implementation = function(clip) {
             try {
-                var item = clip.getItemAt(0);
-                var text = item.getText ? item.getText().toString() : item.getUri().toString();
-                text = text.substring(0, 100);
-                console.log("[Clipboard WRITE] " + text);
+                if (clip && clip.getItemCount() > 0) {
+                    var item = clip.getItemAt(0);
+                    var text = item.getText();
+                    if (text) {
+                        console.log("[CLIPBOARD] WRITE: " + text.toString());
+                    }
+                }
             } catch(e) {}
             return this.setPrimaryClip.call(this, clip);
         };
 
-        // Hook clearPrimaryClip()
-        ClipboardManager.clearPrimaryClip.implementation = function() {
-            console.log("[Clipboard CLEAR]");
-            return this.clearPrimaryClip.call(this);
-        };
+        // Also hook getText() directly
+        var ClipData = Java.use("android.content.ClipData");
+        try {
+            ClipData.getItemAt.overload("int").implementation = function(idx) {
+                var item = this.getItemAt.call(this, idx);
+                try {
+                    if (item.getText()) {
+                        console.log("[CLIPBOARD] getItemAt(" + idx + "): " + item.getText());
+                    }
+                } catch(e) {}
+                return item;
+            };
+        } catch(e) {}
 
-        console.log("[Clipboard Monitor] Watching all clipboard operations...");
+        console.log("[Clipboard Monitor] Ready. Watching clipboard access...");
     });
 }, 0);
