@@ -1,33 +1,26 @@
 /**
- * clipboard_monitor.js -- Monitor all clipboard reads/writes on Android
- * Logs what data apps copy and paste
- * Usage: frida -U -f com.example.app -l clipboard_monitor.js --no-pause
+ * clipboard_monitor.js
+ * Monitor clipboard read/write access in real-time
  */
-
-Java.perform(function() {
-  console.log("[+] Clipboard monitor loaded");
-
-  var ClipboardManager = Java.use("android.content.ClipboardManager");
+Java.perform(() => {
+  const ClipboardManager = Java.use('android.content.ClipboardManager');
+  const PrimaryClip = Java.use('android.content.ClipData');
+  console.log('[+] Clipboard monitor active');
   
-  // Hook getText (read)
-  ClipboardManager.getText.overload().implementation = function() {
-    var text = this.getText();
-    console.log("[CLIPBOARD] READ: " + text);
-    return text;
+  ClipboardManager.setPrimaryClip.overload('android.content.ClipData').implementation = function(clip) {
+    try {
+      const text = clip.getItemAt(0).coerceToText(Java.use('android.app.Activity')).toString();
+      console.log('[CLIPBOARD] SET: ' + text.substring(0, 100));
+    } catch(e) {}
+    return this.setPrimaryClip(clip);
   };
   
-  // Hook setPrimaryClip (write)
-  ClipboardManager.setPrimaryClip.overload("android.content.ClipData")
-    .implementation = function(clip) {
-      var item = clip.getItemAt(0);
-      try {
-        var text = item.getText();
-        console.log("[CLIPBOARD] WRITE: " + text.substring(0, 100));
-      } catch(e) {
-        console.log("[CLIPBOARD] WRITE: (binary data)");
-      }
-      return this.setPrimaryClip(clip);
-    };
-  
-  console.log("[+] Monitoring all clipboard activity");
+  ClipboardManager.getPrimaryClip.implementation = function() {
+    const clip = this.getPrimaryClip();
+    try {
+      const text = clip.getItemAt(0).coerceToText(null).toString();
+      console.log('[CLIPBOARD] GET: ' + text.substring(0, 100));
+    } catch(e) {}
+    return clip;
+  };
 });
